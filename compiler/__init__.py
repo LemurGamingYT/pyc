@@ -1,10 +1,11 @@
 import ast
 from contextlib import contextmanager
+from typing import Any, cast
 from pathlib import Path
 
 from llvmlite import ir, binding as llvm
 
-from compiler.context import Scope
+from compiler.context import Scope, Symbol, Object, SymbolKind
 
 
 class PycCompiler(ast.NodeVisitor):
@@ -47,6 +48,9 @@ class PycCompiler(ast.NodeVisitor):
 
         ret_type = self.visit(node.returns)
         func = ir.Function(self.module, ir.FunctionType(ret_type, []), node.name) # TODO: args
+
+        self.scope.symbols[node.name] = Symbol(Any, SymbolKind.FUNCTION, func)
+        
         entry_block = func.append_basic_block('entry')
         previous_block = self.builder.block
         self.builder.position_at_end(entry_block)
@@ -60,16 +64,24 @@ class PycCompiler(ast.NodeVisitor):
         
         return func
 
+    def visit_Assign(self, node: ast.Assign):
+        name = cast(ast.Name, node.targets[0]).id
+        value = self.visit(node.value)
+        ptr = self.builder.alloca(value.value.type, name=f'{name}.addr')
+        self.builder.store(value.value, ptr)
+        
+        self.scope.symbols[name] = Symbol(value.type, SymbolKind.VARIABLE, ptr)
+
     def visit_Return(self, node: ast.Return):
         if node.value is None:
             return self.builder.ret_void()
         
         value = self.visit(node.value)
-        return self.builder.ret(value)
+        return self.builder.ret(value.value)
 
     def visit_Constant(self, node: ast.Constant):
         match node.value:
             case int() as i:
-                return ir.Constant(ir.IntType(32), i)
+                return Object(ir.Constant(ir.IntType(32), i), int)
             case _:
                 raise NotImplementedError(node.value)

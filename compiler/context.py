@@ -1,9 +1,14 @@
+from typing import Any, Optional, TypeAlias
 from dataclasses import dataclass, field
-from typing import Optional, TypeAlias
 from enum import Enum, auto
 
 
-PyType: TypeAlias = type
+PyType: TypeAlias = Any
+
+@dataclass(slots=True)
+class Object:
+    value: Any
+    type: PyType
 
 class SymbolKind(Enum):
     VARIABLE = auto()
@@ -13,6 +18,7 @@ class SymbolKind(Enum):
 class Symbol:
     type: PyType
     kind: SymbolKind
+    value: Any
 
 @dataclass(slots=True)
 class Scope:
