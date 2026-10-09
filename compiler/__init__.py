@@ -10,8 +10,16 @@ from compiler.context import Scope, Symbol, Object, SymbolKind
 
 class PycCompiler(ast.NodeVisitor):
     def __init__(self, path: Path) -> None:
+        llvm.initialize_native_target()
+        llvm.initialize_native_asmprinter()
+        
         self.module = ir.Module(str(path), context=ir.Context())
         self.module.triple = llvm.get_default_triple()
+
+        self.target = llvm.Target.from_default_triple()
+        self.target_machine = self.target.create_target_machine(cpu='generic', reloc='pic', codemodel='default', opt=2)
+        self.data = self.target_machine.target_data
+        self.module.data_layout = str(self.data)
         
         self.builder = ir.IRBuilder()
         
@@ -62,6 +70,8 @@ class PycCompiler(ast.NodeVisitor):
         ret_type = ret_type_object.value
         params = self.visit(node.args)
         func = ir.Function(self.module, ir.FunctionType(ret_type, [param[0].value for param in params]), node.name) # TODO: args
+        func.linkage = 'dllexport'
+        
         for arg, (_, name) in zip(func.args, params):
             arg.name = f'param.{name}'
 

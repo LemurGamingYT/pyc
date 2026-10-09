@@ -1,5 +1,8 @@
 # codegen files
 *.ll
+*.dll
+*.exp
+*.lib
 
 # python files
 __pycache__/
