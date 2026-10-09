@@ -1,7 +1,10 @@
 import ast
+from contextlib import contextmanager
 from pathlib import Path
 
 from llvmlite import ir, binding as llvm
+
+from compiler.context import Scope
 
 
 class PycCompiler(ast.NodeVisitor):
@@ -12,6 +15,15 @@ class PycCompiler(ast.NodeVisitor):
         self.builder = ir.IRBuilder()
         
         self.path = path
+
+        self.scope = Scope()
+
+    @contextmanager
+    def child_scope(self):
+        outer_scope = self.scope
+        self.scope = outer_scope.clone()
+        yield
+        self.scope = outer_scope
     
     def visit_Module(self, node: ast.Module):
         for stmt in node.body:
@@ -39,8 +51,9 @@ class PycCompiler(ast.NodeVisitor):
         previous_block = self.builder.block
         self.builder.position_at_end(entry_block)
 
-        for stmt in node.body:
-            self.visit(stmt)
+        with self.child_scope():
+            for stmt in node.body:
+                self.visit(stmt)
 
         if previous_block is not None:
             self.builder.position_at_end(previous_block)
