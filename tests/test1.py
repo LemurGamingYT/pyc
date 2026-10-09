@@ -1,3 +1,5 @@
+def test(a: int) -> int:
+    return a + a
+
 def main() -> int:
-    x = 10
-    return 0
+    return test(0)
