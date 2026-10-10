@@ -3,6 +3,7 @@
 *.dll
 *.exp
 *.lib
+*.o
 
 # python files
 __pycache__/
