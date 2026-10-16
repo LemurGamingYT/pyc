@@ -43,7 +43,7 @@ class BuildCommand:
 
     @property
     def emit_type(self):
-        return EmitType[self.emit.upper()]
+        return EmitType[self.emit]
 
     def __post_init__(self):
         self.path = self.path.resolve()
