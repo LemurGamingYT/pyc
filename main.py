@@ -2,6 +2,7 @@ import ast
 from importlib.util import spec_from_file_location, module_from_spec
 from typing import Iterable, Optional
 from dataclasses import dataclass
+from enum import Enum, auto
 from subprocess import run
 from pathlib import Path
 
@@ -25,10 +26,24 @@ def load_py_module(path: Path):
 
     return module
 
+class EmitType(Enum):
+    exe = auto()
+    py = auto()
+    dll = auto()
+    obj = auto()
+    ir = auto()
+
 @dataclass(slots=True)
 class BuildCommand:
     path: Path = field(positional=True, help='The path to build')
-    emit: str = field(default='exe')
+    emit: str = field(default=EmitType.exe.name, choices=[
+        etype.name
+        for etype in list(EmitType)
+    ])
+
+    @property
+    def emit_type(self):
+        return EmitType[self.emit.upper()]
 
     def __post_init__(self):
         self.path = self.path.resolve()
@@ -70,29 +85,27 @@ class BuildCommand:
         
         compiler = PycCompiler(self.path)
         module = compiler.visit(program)
-        match self.emit:
-            case 'ir':
+        match self.emit_type:
+            case EmitType.ir:
                 output_file = self.create_ir_file(module)
-            case 'exe':
+            case EmitType.obj:
+                ir_file = self.create_ir_file(module)
+                output_file = self.create_obj_file(ir_file)
+            case EmitType.exe:
                 ir_file = self.create_ir_file(module)
                 obj_file = self.create_obj_file(ir_file)
                 output_file = self.create_exe_file(obj_file)
-            case 'obj':
-                ir_file = self.create_ir_file(module)
-                output_file = self.create_obj_file(ir_file)
-            case 'dll':
+            case EmitType.dll:
                 ir_file = self.create_ir_file(module)
                 obj_file = self.create_obj_file(ir_file)
                 output_file = self.create_dll_file(obj_file)
-            case 'py':
+            case EmitType.py:
                 ir_file = self.create_ir_file(module)
                 obj_file = self.create_obj_file(ir_file)
                 dll_file = self.create_dll_file(obj_file)
 
                 output_file = self.path.with_stem(f'{self.path.stem}_gen')
                 generate_python_interop_file(module, output_file, dll_file)
-            case _:
-                parser.error(f'unknown emission file type {self.emit}')
 
         print(f'compiled to {output_file}')
         return output_file

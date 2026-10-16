@@ -1,2 +1,2 @@
 # pyc
-A simple AOT compiler for Python
+A simple, but incomplete AOT compiler for Python
