@@ -1,5 +1,8 @@
-def double(x: int) -> int:
-    return x + x
+def count() -> None:
+    i = 0
+    while i < 1_000_000_000:
+        i = i + 1
 
 def main() -> int:
-    return double(10)
+    count()
+    return 0

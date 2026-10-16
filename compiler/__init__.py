@@ -41,6 +41,7 @@ class PycCompiler(ast.NodeVisitor):
         return self.module
 
     def visit_Name(self, node: ast.Name):
+        assert isinstance(node.ctx, ast.Load)
         match node.id:
             case 'int':
                 return Object(ir.IntType(32), int)
@@ -48,6 +49,8 @@ class PycCompiler(ast.NodeVisitor):
                 return Object(ir.FloatType(), float)
             case 'bool':
                 return Object(ir.IntType(1), bool)
+            case 'None':
+                return Object(ir.VoidType(), type(None))
             case _:
                 if node.id in self.scope.symbols:
                     symbol = self.scope.symbols[node.id]
@@ -91,14 +94,57 @@ class PycCompiler(ast.NodeVisitor):
             for stmt in node.body:
                 self.visit(stmt)
 
+        if isinstance(ret_type, ir.VoidType):
+            self.builder.ret_void()
+
         if previous_block is not None:
             self.builder.position_at_end(previous_block)
         
         return func
 
+    def visit_If(self, node: ast.If) -> Any:
+        test = self.visit(node.test).value
+        if node.orelse:
+            with self.builder.if_else(test) as (then, otherwise):
+                with then:
+                    for stmt in node.body:
+                        self.visit(stmt)
+
+                with otherwise:
+                    for stmt in node.orelse:
+                        self.visit(stmt)
+        else:
+            with self.builder.if_then(test):
+                for stmt in node.body:
+                    self.visit(stmt)
+
+    def visit_While(self, node: ast.While):
+        test_block = self.builder.append_basic_block('while_test')
+        body_block = self.builder.append_basic_block('while_body')
+        endwhile_block = self.builder.append_basic_block('endwhile')
+
+        self.builder.branch(test_block)
+        self.builder.position_at_end(test_block)
+
+        test = self.visit(node.test).value
+        self.builder.cbranch(test, body_block, endwhile_block)
+        self.builder.position_at_end(body_block)
+
+        for stmt in node.body:
+            self.visit(stmt)
+
+        self.builder.branch(test_block)
+        self.builder.position_at_end(endwhile_block)
+
     def visit_Assign(self, node: ast.Assign):
         name = cast(ast.Name, node.targets[0]).id
         value = self.visit(node.value)
+        if name in self.scope.symbols:
+            symbol = self.scope.symbols[name]
+            ptr = symbol.value
+            self.builder.store(value.value, ptr)
+            return
+        
         ptr = self.builder.alloca(value.value.type, name=f'{name}.addr')
         self.builder.store(value.value, ptr)
         
@@ -113,8 +159,12 @@ class PycCompiler(ast.NodeVisitor):
 
     def visit_Constant(self, node: ast.Constant):
         match node.value:
+            case bool() as b:
+                return Object(ir.Constant(ir.IntType(1), b), bool)
             case int() as i:
                 return Object(ir.Constant(ir.IntType(32), i), int)
+            case None:
+                return Object(ir.VoidType(), type(None))
             case _:
                 raise NotImplementedError(node.value)
 
@@ -133,12 +183,48 @@ class PycCompiler(ast.NodeVisitor):
     def sub_ints(self, a: Object, b: Object):
         return Object(self.builder.sub(a.value, b.value, 'int - int'), int)
 
+    def eq_ints(self, a: Object, b: Object):
+        return Object(self.builder.icmp_signed('==', a.value, b.value, 'int == int'), bool)
+
+    def neq_ints(self, a: Object, b: Object):
+        return Object(self.builder.icmp_signed('!=', a.value, b.value, 'int != int'), bool)
+
+    def lt_ints(self, a: Object, b: Object):
+        return Object(self.builder.icmp_signed('<', a.value, b.value, 'int < int'), bool)
+
+    def gt_ints(self, a: Object, b: Object):
+        return Object(self.builder.icmp_signed('>', a.value, b.value, 'int > int'), bool)
+
+    def lte_ints(self, a: Object, b: Object):
+        return Object(self.builder.icmp_signed('<=', a.value, b.value, 'int <= int'), bool)
+
+    def gte_ints(self, a: Object, b: Object):
+        return Object(self.builder.icmp_signed('>=', a.value, b.value, 'int >= int'), bool)
+
     binop_method = {
         ast.Add: {
             (int, int): add_ints
         },
         ast.Sub: {
             (int, int): sub_ints
+        },
+        ast.Eq: {
+            (int, int): eq_ints
+        },
+        ast.NotEq: {
+            (int, int): neq_ints
+        },
+        ast.Lt: {
+            (int, int): lt_ints
+        },
+        ast.Gt: {
+            (int, int): gt_ints
+        },
+        ast.LtE: {
+            (int, int): lte_ints
+        },
+        ast.GtE: {
+            (int, int): gte_ints
         }
     }
 
@@ -147,4 +233,11 @@ class PycCompiler(ast.NodeVisitor):
         right = self.visit(node.right)
 
         method = self.binop_method[node.op.__class__][(left.type, right.type)]
+        return method(self, left, right)
+
+    def visit_Compare(self, node: ast.Compare):
+        left = self.visit(node.left)
+        right = self.visit(node.comparators[0])
+
+        method = self.binop_method[node.ops[0].__class__][(left.type, right.type)]
         return method(self, left, right)
