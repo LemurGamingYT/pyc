@@ -28,7 +28,8 @@ def generate_python_interop_file(module: ir.Module, path: Path, dll_path: Path):
         call_args_str = ', '.join(arg.name.removeprefix('param.') for arg in func.args)
         lines.extend((
             f'def {func.name}({params_str}) -> {llvm_to_py(func.function_type.return_type)}:',
-            f'    return lib.{func.name}({call_args_str})'
+            f'    return lib.{func.name}({call_args_str})',
+            ''
         ))
 
     path.write_text('\n'.join(lines))
